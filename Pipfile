@@ -1,0 +1,19 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+paramiko = "*"
+dynamorm = "*"
+werkzeug = "*"
+flask = "*"
+flask-cors = "*"
+requests = "*"
+marshmallow = "===3.15.0"
+boto3 = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.8"

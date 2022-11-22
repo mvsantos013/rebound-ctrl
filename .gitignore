@@ -1,0 +1,30 @@
+# Distribution / packaging
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+__pycache__
+
+# Serverless directories
+.serverless
+
+node_modules
+
+.packages
+.requirements.zip
+unzip_requirements.py
+.secret
+.serverless-wsgi
+serverless_wsgi.py
+wsgi_handler.py

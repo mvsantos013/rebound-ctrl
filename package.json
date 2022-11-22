@@ -1,0 +1,16 @@
+{
+  "name": "rebound-ctrl",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "bash ./etc/api.sh",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "serverless-python-requirements": "^5.4.0",
+    "serverless-wsgi": "^3.0.1"
+  }
+}
