@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request as req
 from src.app.models import SimulationModel, SimulationResultsModel
 from src.app import service
-from src.app.constants import HOSTS
+from src.constants import HOSTS
 
 blueprint = Blueprint('rebound-ctrl', __name__)
 
@@ -14,6 +14,11 @@ def fetch_simulations():
     simulations = [s.to_dict() for s in SimulationModel.scan().limit(10000)]
     return jsonify(data=simulations)
 
+@blueprint.route('/simulations/<id>/logs', methods=['GET'])
+def fetch_simulation_logs(id):
+    host = req.args.get('host')
+    return service.fetch_simulation_logs(id, host)
+
 @blueprint.route('/simulations/<id>', methods=['GET'])
 def fetch_simulation_results(id):
     result = SimulationResultsModel.get(id=id)
@@ -23,8 +28,8 @@ def fetch_simulation_results(id):
 
 @blueprint.route('/simulations', methods=['POST'])
 def create_simulation():
-    print('oi')
-    return {}
+    simulation = req.get_json()
+    return service.create_simulation(simulation)
 
 def delete_simulation():
     pass

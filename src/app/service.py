@@ -1,10 +1,16 @@
 import json
 import time
-from datetime import datetime
+from uuid import uuid4
+from decimal import Decimal
+from datetime import datetime, timezone
 from src.lib.adapters.ssh_adapter import SSHClient
-from src.app.constants import HOSTS, SSH_KEYS
+from src.app.models import SimulationModel, SimulationResultsModel
+from src.constants import HOSTS, SSH_KEYS
 
 def fetch_host_status(ssh, host):
+    ''' Check if host is busy. Currently the approach is to check if
+        there are more than 7 processes running, but this could be improved.
+    '''
     try:
         if(host not in SSH_KEYS):
             raise Exception(f'Credentials not found for host {host}.')
@@ -19,14 +25,21 @@ def process_exists(ssh, process_id):
     response, error = ssh.cmd(f'ps -p {process_id}')
     return str(process_id) in response
 
-def start_simulation(host, simulation):
+def create_simulation(simulation):
+    ssh = None
     try:
+        simulation['id'] = str(uuid4())
+        simulation['created_at'] = datetime.now(timezone.utc).isoformat()
+        
+        # Validate inputs
+        SimulationModel.Schema().load(simulation)
+        
+        host = simulation['host']
         ssh = SSHClient(host, **SSH_KEYS[host]).connect()
         
         # Check if host is free
         print('Checking host status...')
         if(fetch_host_status(ssh, host) == 'busy'):
-            ssh.disconnect()
             raise Exception(f'Host {host} is busy.')
         
         print('Host is free.')
@@ -36,92 +49,46 @@ def start_simulation(host, simulation):
         folder = f'rebound-ctrl/simulations/{simulation["id"]}'
         ssh.cmd(f'mkdir -p {folder}')
         
-        # meta.json file content
-        meta = {
-            'id': simulation['id'], 
-            'created_at': simulation['created_at'],
-            'inputs': {
-                'simulation_type': simulation['simulation_type'],
-                'cores': simulation['cores'],
-                'integrator': simulation['integrator'],
-                'years': simulation['years'],
-                'num_logs': simulation['num_logs'],
-                'ejection_max_distance': simulation['ejection_max_distance'],
-                'particles': simulation['particles'],
-            }
-        }
-        
-        if(simulation['simulation_type'] == 'grid'):
-            meta['inputs']['grid'] = simulation['grid']
-        
-        meta_content = json.dumps(meta, indent=4).replace('"', '\\"')
-        
-        # Upload meta.json file
+        # Upload meta.json file 
+        meta_content = json.dumps(simulation, indent=4).replace('"', '\\"')
         ssh.upload(f'src/assets/problem.py', f'{folder}/problem.py')
         
         # Commands to setup simulation folder and start execution
-        commands = [
-            f'cd {folder}',
-            f'echo "{meta_content}" > meta.json',
-            f'echo "python -u problem.py" > run.sh',
-            f'chmod +x run.sh',
-        ]
         print('Starting simulation...')
-        ssh.cmd(' && '.join(commands))
+        ssh.cmd(f'cd {folder} && echo "{meta_content}" > meta.json')
+        ssh.cmd(f'cd {folder} && echo "python -u problem.py" > run.sh')
+        ssh.cmd(f'cd {folder} && chmod +x run.sh')
         ssh.cmd(f'cd {folder} && nohup ./run.sh > logs.txt 2> errors.txt & echo $! > {folder}/pid.txt', wait_response=False)
         
+        print('Checking simulation status...')
+        time.sleep(1)
         try:
-            print('Checking simulation status...')
-            time.sleep(3)
             process_id = int(ssh.cmd(f'cd {folder} && cat pid.txt')[0])
             if(process_exists(ssh, process_id)):
                 print('Simulation started successfully. PID:', process_id)
-                ssh.disconnect()
-                return True
         except Exception as e:
-            print('Error while fetching process id: ', e)
-            return False
-
+            raise(f'Process ID could not be identified. ({e}) ')
+        
+        simulation['process_id'] = str(process_id)
+        simulation['status'] = 'running'
+        
+        obj: dict = json.loads(json.dumps(simulation), parse_float=Decimal)
+        SimulationModel(**obj).save()    
+        
+        return simulation
     except Exception as e:
-        print(e)
-        return False
-
-
-# fetch_host_status('ganimedes.rc.unesp.br')
-
-simulation = {
-    "id": "aaaaa-bbbbb-cccc-dddd-eeee-ffff",
-    "simulation_type": "grid",
-    "cores": 16,
-    "integrator": "whfast",
-    "years": 5.0,
-    "num_logs": 50,
-    "ejection_max_distance": 20.0,
-    "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-    "particles": [
-        {
-            "m": 1.0
-        },
-        {
-            "m": 1e-3,
-            "a": 0.9,
-            "e": 0.0
-        }
-    ],
-    "grid": {
-        "N": 70,
-        "particle": {
-            "m": 3e-5,
-            "a": [
-                0.11,
-                1.5
-            ],
-            "e": [
-                0.0,
-                0.5
-            ]
-        }
-    }
-}
-print(start_simulation('ganimedes.rc.unesp.br', simulation))
-exit()
+        if(ssh is not None):
+            ssh.disconnect()
+        raise Exception(f'Error while creating simulation: {e}')
+    
+def fetch_simulation_logs(id, host):
+    ssh = None
+    try:
+        ssh = SSHClient(host, **SSH_KEYS[host]).connect()
+        response, error = ssh.cmd(f'cat rebound-ctrl/simulations/{id}/logs.txt')
+        return response       
+    except Exception as e:
+        if(ssh is not None):
+            ssh.disconnect()
+        raise Exception(f'Error while fetching simulation logs: {e}')
+    

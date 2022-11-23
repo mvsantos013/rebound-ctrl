@@ -1,5 +1,6 @@
 import rebound
 from rebound.interruptible_pool import InterruptiblePool
+from datetime import datetime, timezone
 import numpy as np
 import matplotlib.pyplot as plt
 import multiprocessing
@@ -8,10 +9,9 @@ import json
 
 # Read simulation parameters.
 with open("meta.json") as f:
-    meta = json.load(f)
-    inputs = meta['inputs']
+    inputs = json.load(f)
 
-SIMULATION_ID = meta['id']
+SIMULATION_ID = inputs['id']
 SIMULATION_TYPE = inputs['simulation_type']             # Simulation type (single or grid)
 CORES = inputs['cores']                                 # Number of processor cores to use
 INTEGRATOR = inputs['integrator']                       # Integrator to use
@@ -76,6 +76,7 @@ def calculate_orbits(sim):
 
 if __name__ == "__main__":
     try:
+        print(f'{datetime.now(timezone.utc).isoformat()} Running simulation...')
         if(SIMULATION_TYPE == 'single'):
             megno, orbits = simulate(inputs['particles'])
             end_time = time.time()
@@ -124,9 +125,13 @@ if __name__ == "__main__":
         else: 
             raise Exception(f'Simulation type not implemented: {SIMULATION_TYPE}')
         
+        print(f'{datetime.now(timezone.utc).isoformat()} Simulation finished.')
+        print(f'{datetime.now(timezone.utc).isoformat()} Results:', result)
+        
         with open('results.json', 'w') as f:
             json.dump(result, f, indent=4)
             
     except Exception as e:
+        print(f'{datetime.now(timezone.utc).isoformat()} Error: {e}')
         with open('results.json', 'w') as f:
             json.dump({'error': str(e), 'status': 'error'}, f, indent=4)
