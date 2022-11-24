@@ -12,7 +12,7 @@ with open("meta.json") as f:
     inputs = json.load(f)
 
 SIMULATION_ID = inputs['id']
-SIMULATION_TYPE = inputs['simulation_type']             # Simulation type (single or grid)
+SIMULATION_TYPE = inputs['simulation_type']             # Simulation type (default or grid)
 CORES = inputs['cores']                                 # Number of processor cores to use
 INTEGRATOR = inputs['integrator']                       # Integrator to use
 YEARS = inputs['years']                                 # 100 years
@@ -35,6 +35,8 @@ def simulate(particles, params = {}):
     sim.integrator = INTEGRATOR
 
     for particle in particles:
+        for attr in particle:
+            particle[attr] = float(particle[attr])
         sim.add(**particle)                         # Add particle to the simulation
 
     sim.move_to_com()                               # Move objects to the center of momentum frame
@@ -47,7 +49,7 @@ def simulate(particles, params = {}):
     except rebound.Escape:
         megno = 10.                                 # Particle got ejected
 
-    if(SIMULATION_TYPE == 'single'):
+    if(SIMULATION_TYPE == 'default'):
         orbits = calculate_orbits(sim)                            
         return megno, orbits
     elif(SIMULATION_TYPE == 'grid'):
@@ -77,13 +79,13 @@ def calculate_orbits(sim):
 if __name__ == "__main__":
     try:
         print(f'{datetime.now(timezone.utc).isoformat()} Running simulation...')
-        if(SIMULATION_TYPE == 'single'):
+        if(SIMULATION_TYPE == 'default'):
             megno, orbits = simulate(inputs['particles'])
             end_time = time.time()
             result = {
                 'id': SIMULATION_ID,
-                'start_time': start_time,
-                'end_time': end_time,
+                'start_time': datetime.fromtimestamp(start_time).isoformat(),
+                'end_time': datetime.fromtimestamp(end_time).isoformat(),
                 'duration_time': (end_time - start_time) / 60 / 60,
                 'status': 'finished',
                 'results': {
@@ -114,8 +116,8 @@ if __name__ == "__main__":
             end_time = time.time()
             result = {
                 'id': SIMULATION_ID,
-                'start_time': start_time,
-                'end_time': end_time,
+                'start_time': datetime.fromtimestamp(start_time).isoformat(),
+                'end_time': datetime.fromtimestamp(end_time).isoformat(),
                 'duration_time': (end_time - start_time) / 60 / 60,
                 'status': 'finished',
                 'results': {
@@ -126,12 +128,12 @@ if __name__ == "__main__":
             raise Exception(f'Simulation type not implemented: {SIMULATION_TYPE}')
         
         print(f'{datetime.now(timezone.utc).isoformat()} Simulation finished.')
-        print(f'{datetime.now(timezone.utc).isoformat()} Results:', result)
+        print(f'{datetime.now(timezone.utc).isoformat()} Results:', json.dumps(result, indent=2))
         
         with open('results.json', 'w') as f:
             json.dump(result, f, indent=4)
             
     except Exception as e:
-        print(f'{datetime.now(timezone.utc).isoformat()} Error: {e}')
+        print(f'{datetime.now(timezone.utc).isoformat()} PROGRAM_ERROR: {e}')
         with open('results.json', 'w') as f:
-            json.dump({'error': str(e), 'status': 'error'}, f, indent=4)
+            json.dump({'error': str(e), 'status': 'failed'}, f, indent=4)

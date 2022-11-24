@@ -31,5 +31,10 @@ def create_simulation():
     simulation = req.get_json()
     return service.create_simulation(simulation)
 
+@blueprint.route('/simulations/check-status', methods=['POST'])
+def check_simulations_status():
+    simulations = req.get_json()
+    return service.check_simulations_status(simulations)
+
 def delete_simulation():
     pass

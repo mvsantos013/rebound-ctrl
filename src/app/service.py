@@ -1,5 +1,6 @@
 import json
 import time
+import traceback
 from uuid import uuid4
 from decimal import Decimal
 from datetime import datetime, timezone
@@ -72,7 +73,7 @@ def create_simulation(simulation):
         simulation['process_id'] = str(process_id)
         simulation['status'] = 'running'
         
-        obj: dict = json.loads(json.dumps(simulation), parse_float=Decimal)
+        obj = json.loads(json.dumps(simulation), parse_float=Decimal)
         SimulationModel(**obj).save()    
         
         return simulation
@@ -91,4 +92,56 @@ def fetch_simulation_logs(id, host):
         if(ssh is not None):
             ssh.disconnect()
         raise Exception(f'Error while fetching simulation logs: {e}')
-    
+
+def check_simulations_status(simulations):
+    response = []
+    for simulation in simulations:
+        ssh = None
+        try:
+            host = simulation['host']
+            ssh = SSHClient(host, **SSH_KEYS[host]).connect()
+            sim_path = f'rebound-ctrl/simulations/{simulation["id"]}'
+            
+            # Check if there is a simulation folder
+            has_simulation, error = ssh.cmd(f'[ -d "{sim_path}" ] && echo true')
+            if(not has_simulation):
+                simulation['status'] = 'unkwown'
+            
+            # Check if there are errors
+            errors_content, error = ssh.cmd(f'[ -f "{sim_path}/errors.txt" ] && cat {sim_path}/errors.txt')
+            if(errors_content):
+                simulation['status'] = 'failed'
+            
+            # Check if simulation has results
+            results, error = ssh.cmd(f'[ -f "{sim_path}/results.json" ] && cat {sim_path}/results.json')
+            if(results):
+                results = json.loads(results)
+                if(results['status'] == 'failed'):
+                    simulation['status'] = 'failed'
+                else:
+                    simulation['status'] = 'finished'
+            
+            # Simulation is not running anymore, save results in database.
+            if(simulation['status'] != 'running'):
+                obj = { 
+                    'id': simulation['id'],
+                    'results': results if results else {}
+                }
+                
+                # Save results
+                obj = json.loads(json.dumps(obj), parse_float=Decimal)
+                SimulationResultsModel(**obj).save()
+                
+                # Update simulation status
+                sim = {'id': simulation['id'], 'status': simulation['status']}
+                SimulationModel(**sim).update(**sim)
+                
+            response.append(simulation)
+            ssh.disconnect()
+        except Exception as e:
+            print(traceback.format_exc())
+            if(ssh is not None):
+                ssh.disconnect()
+            simulation['error'] = f'Error while updating simulations status: {e}'
+            response.append(simulation)
+    return response

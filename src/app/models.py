@@ -41,6 +41,7 @@ class SimulationResultsModel(DynaModel):
         end_time = fields.Str()
         duration_time = fields.Str()
         results = fields.Dict()
+        errors = fields.Str()
         created_at = fields.Str()
 
     class Schema(SimulationResultsSchema):
