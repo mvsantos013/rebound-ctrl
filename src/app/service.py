@@ -130,7 +130,7 @@ def check_simulations_status(simulations):
                 
                 # Save results
                 obj = json.loads(json.dumps(obj), parse_float=Decimal)
-                SimulationResultsModel(**obj).save()
+                # SimulationResultsModel(**obj).save()
                 
                 # Update simulation status
                 sim = {'id': simulation['id'], 'status': simulation['status']}

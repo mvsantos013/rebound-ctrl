@@ -18,6 +18,7 @@ class SimulationModel(DynaModel):
         simulation_type = fields.Str()
         cores = fields.Int()
         integrator = fields.Str()
+        timestep = fields.Decimal()
         years = fields.Decimal()
         num_logs = fields.Int()
         ejection_max_distance = fields.Decimal()
