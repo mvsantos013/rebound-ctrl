@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request as req
+from flask import Blueprint, jsonify, request as req, Response
 from src.app.models import SimulationModel, SimulationResultsModel
 from src.app import service
 from src.constants import HOSTS
@@ -19,12 +19,14 @@ def fetch_simulation_logs(id):
     host = req.args.get('host')
     return service.fetch_simulation_logs(id, host)
 
-@blueprint.route('/simulations/<id>', methods=['GET'])
-def fetch_simulation_results(id):
-    result = SimulationResultsModel.get(id=id)
-    if(result is None):
-        return {}
-    return result.to_dict()
+@blueprint.route('/simulations/<id>/results', methods=['GET'])
+def download_simulation_results(id):
+    host = req.args.get('host')
+    file = service.download_simulation_results(id, host)
+    response = Response(file, mimetype='application/tar+gzip')
+    response.headers.add('Access-Control-Expose-Headers', f'Content-Disposition')
+    response.headers.add('Content-Disposition', f'attachment; filename=results-{id}.tar.gz')
+    return response
 
 @blueprint.route('/simulations', methods=['POST'])
 def create_simulation():

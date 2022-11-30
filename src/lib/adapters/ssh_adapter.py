@@ -1,3 +1,4 @@
+import io
 import paramiko
 
 class SSHClient():
@@ -24,10 +25,13 @@ class SSHClient():
             self.sftp = self.ssh.open_sftp()
         self.sftp.put(local_path, remote_path)
     
-    def download(self, remote_path, local_path):
+    def download(self, remote_path):
         if(not self.sftp):
             self.sftp = self.ssh.open_sftp()
-        self.sftp.get(remote_path, local_path)
+        with io.BytesIO() as buffer:
+            self.sftp.getfo(remote_path, buffer)
+            buffer.seek(0)
+            return buffer.read()
     
     def cmd(self, command, wait_response=True):
         stdin, stdout, stderr = self.ssh.exec_command(command)

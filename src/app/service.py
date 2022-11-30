@@ -53,6 +53,7 @@ def create_simulation(simulation):
         # Upload meta.json file 
         meta_content = json.dumps(simulation, indent=4).replace('"', '\\"')
         ssh.upload(f'src/assets/problem.py', f'{folder}/problem.py')
+        ssh.upload(f'src/assets/charts.py', f'{folder}/charts.py')
         
         # Commands to setup simulation folder and start execution
         print('Starting simulation...')
@@ -145,3 +146,18 @@ def check_simulations_status(simulations):
             simulation['error'] = f'Error while updating simulations status: {e}'
             response.append(simulation)
     return response
+
+def download_simulation_results(id, host):
+    ssh = None
+    try:
+        ssh = SSHClient(host, **SSH_KEYS[host]).connect()
+        folder = f'rebound-ctrl/simulations/{id}'
+        ssh.cmd(f'cd {folder} && rm results.tar.gz')
+        ssh.cmd(f'cd {folder} && tar -czvf results.tar.gz .')
+        time.sleep(1)
+        file = ssh.download(f'{folder}/results.tar.gz')
+        return file     
+    except Exception as e:
+        if(ssh is not None):
+            ssh.disconnect()
+        raise Exception(f'Error while fetching simulation results: {e}')
