@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request as req, Response
-from src.app.models import SimulationModel, SimulationResultsModel
+from src.app.models import SimulationModel
 from src.app import service
 from src.constants import HOSTS
 
@@ -21,8 +21,7 @@ def fetch_simulation_logs(id):
 
 @blueprint.route('/simulations/<id>/results', methods=['GET'])
 def download_simulation_results(id):
-    host = req.args.get('host')
-    file = service.download_simulation_results(id, host)
+    file = service.download_simulation_results(id)
     response = Response(file, mimetype='application/tar+gzip')
     response.headers.add('Access-Control-Expose-Headers', f'Content-Disposition')
     response.headers.add('Content-Disposition', f'attachment; filename=results-{id}.tar.gz')
@@ -33,10 +32,12 @@ def create_simulation():
     simulation = req.get_json()
     return service.create_simulation(simulation)
 
+@blueprint.route('/simulations/<id>', methods=['DELETE'])
+def delete_simulation(id):
+    service.delete_simulation(id)
+    return jsonify(data={'success': True})
+
 @blueprint.route('/simulations/check-status', methods=['POST'])
 def check_simulations_status():
     simulations = req.get_json()
     return service.check_simulations_status(simulations)
-
-def delete_simulation():
-    pass

@@ -1,12 +1,14 @@
 import json
 import time
 import traceback
+from io import BytesIO
 from uuid import uuid4
 from decimal import Decimal
 from datetime import datetime, timezone
 from src.lib.adapters.ssh_adapter import SSHClient
-from src.app.models import SimulationModel, SimulationResultsModel
-from src.constants import HOSTS, SSH_KEYS
+from src.lib.adapters import s3_adapter
+from src.app.models import SimulationModel
+from src.constants import HOSTS, SSH_KEYS, STAGE
 
 def fetch_host_status(ssh, host):
     ''' Check if host is busy. Currently the approach is to check if
@@ -48,18 +50,22 @@ def create_simulation(simulation):
         
         # Create simulation folder
         folder = f'rebound-ctrl/simulations/{simulation["id"]}'
-        ssh.cmd(f'mkdir -p {folder}')
-        
-        # Upload meta.json file 
-        meta_content = json.dumps(simulation, indent=4).replace('"', '\\"')
-        ssh.upload(f'src/assets/problem.py', f'{folder}/problem.py')
-        ssh.upload(f'src/assets/charts.py', f'{folder}/charts.py')
+        ssh.cmd(f'mkdir -p {folder}/problem/types')
         
         # Commands to setup simulation folder and start execution
-        print('Starting simulation...')
+        files = [
+            'problem/__init__.py', 'problem/types/default.py', 'problem/types/grid.py',
+            'problem/utils.py', 'problem.py', 'charts.py', 'README.md'
+        ]
+        for filename in files:
+            ssh.upload(f'src/boilerplate/{filename}', f'{folder}/{filename}')
+        
+        meta_content = json.dumps(simulation, indent=4).replace('"', '\\"')
         ssh.cmd(f'cd {folder} && echo "{meta_content}" > meta.json')
-        ssh.cmd(f'cd {folder} && echo "python -u problem.py" > run.sh')
+        ssh.cmd(f'cd {folder} && echo "python3 -u problem.py" > run.sh')
         ssh.cmd(f'cd {folder} && chmod +x run.sh')
+        
+        print('Starting simulation...')
         ssh.cmd(f'cd {folder} && nohup ./run.sh > logs.txt 2> errors.txt & echo $! > {folder}/pid.txt', wait_response=False)
         
         print('Checking simulation status...')
@@ -84,15 +90,23 @@ def create_simulation(simulation):
         raise Exception(f'Error while creating simulation: {e}')
     
 def fetch_simulation_logs(id, host):
-    ssh = None
-    try:
-        ssh = SSHClient(host, **SSH_KEYS[host]).connect()
-        response, error = ssh.cmd(f'cat rebound-ctrl/simulations/{id}/logs.txt')
-        return response       
-    except Exception as e:
-        if(ssh is not None):
-            ssh.disconnect()
-        raise Exception(f'Error while fetching simulation logs: {e}')
+    simulation = SimulationModel.get(id=id)
+    
+    # Retrieve from machine if it's still running
+    if(simulation and simulation.status == 'running'):
+        ssh = None
+        try:
+            ssh = SSHClient(host, **SSH_KEYS[host]).connect()
+            logs, error = ssh.cmd(f'cat rebound-ctrl/simulations/{id}/logs.txt')
+            return logs       
+        except Exception as e:
+            if(ssh is not None):
+                ssh.disconnect()
+            raise Exception(f'Error while fetching simulation logs: {e}')
+    
+    # Retrieve from S3 if it's finished
+    logs = download_simulation_logs(id)
+    return logs
 
 def check_simulations_status(simulations):
     response = []
@@ -114,7 +128,7 @@ def check_simulations_status(simulations):
                 simulation['status'] = 'failed'
             
             # Check if simulation has results
-            results, error = ssh.cmd(f'[ -f "{sim_path}/results.json" ] && cat {sim_path}/results.json')
+            results, error = ssh.cmd(f'[ -f "{sim_path}/results/results.json" ] && cat {sim_path}/results/results.json')
             if(results):
                 results = json.loads(results)
                 if(results['status'] == 'failed'):
@@ -122,21 +136,32 @@ def check_simulations_status(simulations):
                 else:
                     simulation['status'] = 'finished'
             
-            # Simulation is not running anymore, save results in database.
+            # Simulation is not running anymore, save results in database and s3.
             if(simulation['status'] != 'running'):
-                obj = { 
-                    'id': simulation['id'],
-                    'results': results if results else {}
-                }
-                
-                # Save results
-                obj = json.loads(json.dumps(obj), parse_float=Decimal)
-                # SimulationResultsModel(**obj).save()
-                
                 # Update simulation status
                 sim = {'id': simulation['id'], 'status': simulation['status']}
                 SimulationModel(**sim).update(**sim)
                 
+                # Save results in s3 if simulation folder is available
+                if(simulation['status'] == 'finished'):
+                    try:
+                        folder = f'rebound-ctrl/simulations/{simulation["id"]}'
+                        ssh.cmd(f'cd {folder} && rm results.tar.gz')
+                        ssh.cmd(f'cd {folder} && tar -czvf results.tar.gz .')
+                        file = ssh.download(f'{folder}/results.tar.gz')
+                        logs, error = ssh.cmd(f'cat rebound-ctrl/simulations/{simulation["id"]}/logs.txt')
+                        bucket = f'rebound-ctrl-{STAGE}-files'
+                        s3_adapter.upload_file(
+                            bucket=bucket, 
+                            path=f'simulations/{simulation["id"]}/results.tar.gz', 
+                            file=file, 
+                            content_type='application/tar+gzip'
+                        )
+                        s3_adapter.save_to_s3(bucket, f'simulations/{simulation["id"]}/logs.txt', logs)
+                        ssh.cmd(f'rm -r {folder}')
+                    except:
+                        raise Exception('Error while saving simulation results in AWS S3. The simulation files are still available in the server.')
+                    
             response.append(simulation)
             ssh.disconnect()
         except Exception as e:
@@ -147,17 +172,39 @@ def check_simulations_status(simulations):
             response.append(simulation)
     return response
 
-def download_simulation_results(id, host):
-    ssh = None
+def download_simulation_results(id):
     try:
-        ssh = SSHClient(host, **SSH_KEYS[host]).connect()
-        folder = f'rebound-ctrl/simulations/{id}'
-        ssh.cmd(f'cd {folder} && rm results.tar.gz')
-        ssh.cmd(f'cd {folder} && tar -czvf results.tar.gz .')
-        time.sleep(1)
-        file = ssh.download(f'{folder}/results.tar.gz')
-        return file     
+        file = s3_adapter.download_file(f'rebound-ctrl-{STAGE}-files', f'simulations/{id}/results.tar.gz')
+        return file
     except Exception as e:
-        if(ssh is not None):
-            ssh.disconnect()
         raise Exception(f'Error while fetching simulation results: {e}')
+
+def download_simulation_logs(id):
+    try:
+        file = s3_adapter.download_file(f'rebound-ctrl-{STAGE}-files', f'simulations/{id}/logs.txt')
+        return file
+    except Exception as e:
+        raise Exception(f'Error while fetching simulation logs: {e}')
+
+def delete_simulation(id):
+    simulation = SimulationModel.get(id=id)
+    
+    # Delete from machine if it's still running
+    if(simulation and simulation.status == 'running'):
+        ssh = None
+        try:
+            ssh = SSHClient(simulation.host, **SSH_KEYS[simulation.host]).connect()
+            ssh.cmd(f'rm -r rebound-ctrl/simulations/{id}')
+            # TODO: kill process
+        except Exception as e:
+            print(f'Error while deleting simulation folder: {e}')
+            if(ssh is not None):
+                ssh.disconnect()
+    else: # Simulation has already finished, delete results from s3
+        try:
+            s3_adapter.delete_file(f'rebound-ctrl-{STAGE}-files', f'simulations/{id}/results.tar.gz')
+            s3_adapter.delete_file(f'rebound-ctrl-{STAGE}-files', f'simulations/{id}/logs.txt')
+        except Exception as e:
+            print(f'Error while deleting simulation folder: {e}')
+    
+    simulation.delete()

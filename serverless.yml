@@ -77,14 +77,7 @@ resources:
           - AttributeName: id
             KeyType: HASH
     
-    SimulationsResultsTable:
-      Type: "AWS::DynamoDB::Table"
+    ProjectBucket:
+      Type: AWS::S3::Bucket
       Properties:
-        TableName: ${self:service}-${self:provider.stage}-SimulationsResults
-        BillingMode: PAY_PER_REQUEST
-        AttributeDefinitions:
-          - AttributeName: id
-            AttributeType: S
-        KeySchema:
-          - AttributeName: id
-            KeyType: HASH
+        BucketName: "${self:service}-${self:provider.stage}-files"

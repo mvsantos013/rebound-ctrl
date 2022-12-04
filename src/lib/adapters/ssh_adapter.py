@@ -12,7 +12,12 @@ class SSHClient():
     def connect(self):
         self.ssh = paramiko.SSHClient()
         self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        self.ssh.connect(self.host, username=self.username, password=self.password, port=self.port)
+        try:
+            self.ssh.connect(self.host, username=self.username, password=self.password, port=self.port)
+        except Exception as e:
+            if('timed out' in str(e).lower()):
+                raise Exception(f'{self.host} connection timeout.')
+            raise Exception(f'{self.host} SSH connection error: {e}')
         return self
 
     def disconnect(self):
@@ -28,10 +33,10 @@ class SSHClient():
     def download(self, remote_path):
         if(not self.sftp):
             self.sftp = self.ssh.open_sftp()
-        with io.BytesIO() as buffer:
-            self.sftp.getfo(remote_path, buffer)
-            buffer.seek(0)
-            return buffer.read()
+        buffer = io.BytesIO()
+        self.sftp.getfo(remote_path, buffer)
+        buffer.seek(0)
+        return buffer
     
     def cmd(self, command, wait_response=True):
         stdin, stdout, stderr = self.ssh.exec_command(command)
