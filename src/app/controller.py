@@ -1,13 +1,12 @@
 from flask import Blueprint, jsonify, request as req, Response
 from src.app.models import SimulationModel
 from src.app import service
-from src.constants import HOSTS
 
 blueprint = Blueprint('rebound-ctrl', __name__)
 
 @blueprint.route('/hosts', methods=['GET'])
 def fetch_hosts():
-    return jsonify(data=HOSTS)
+    return jsonify(data=service.fetch_hosts())
 
 @blueprint.route('/simulations', methods=['GET'])
 def fetch_simulations():

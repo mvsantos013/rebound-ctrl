@@ -7,15 +7,19 @@ from decimal import Decimal
 from datetime import datetime, timezone
 from src.lib.adapters.ssh_adapter import SSHClient
 from src.lib.adapters import s3_adapter
+from src.lib import utils
 from src.app.models import SimulationModel
-from src.constants import HOSTS, SSH_KEYS, STAGE
+from src.constants import STAGE
+
+def fetch_hosts():
+    return list(utils.get_ssh_keys().keys())
 
 def fetch_host_status(ssh, host):
     ''' Check if host is busy. Currently the approach is to check if
         there are more than 7 processes running, but this could be improved.
     '''
     try:
-        if(host not in SSH_KEYS):
+        if(host not in utils.get_ssh_keys()):
             raise Exception(f'Credentials not found for host {host}.')
         response, error = ssh.cmd('cat /proc/loadavg')
         procs, total_procs = response.split()[3].split('/')
@@ -38,7 +42,7 @@ def create_simulation(simulation):
         SimulationModel.Schema().load(simulation)
         
         host = simulation['host']
-        ssh = SSHClient(host, **SSH_KEYS[host]).connect()
+        ssh = SSHClient(host, **utils.get_ssh_keys()[host]).connect()
         
         # Check if host is free
         print('Checking host status...')
@@ -96,7 +100,7 @@ def fetch_simulation_logs(id, host):
     if(simulation and simulation.status == 'running'):
         ssh = None
         try:
-            ssh = SSHClient(host, **SSH_KEYS[host]).connect()
+            ssh = SSHClient(host, **utils.get_ssh_keys()[host]).connect()
             logs, error = ssh.cmd(f'cat rebound-ctrl/simulations/{id}/logs.txt')
             return logs       
         except Exception as e:
@@ -114,7 +118,7 @@ def check_simulations_status(simulations):
         ssh = None
         try:
             host = simulation['host']
-            ssh = SSHClient(host, **SSH_KEYS[host]).connect()
+            ssh = SSHClient(host, **utils.get_ssh_keys()[host]).connect()
             sim_path = f'rebound-ctrl/simulations/{simulation["id"]}'
             
             # Check if there is a simulation folder
@@ -193,7 +197,7 @@ def delete_simulation(id):
     if(simulation and simulation.status == 'running'):
         ssh = None
         try:
-            ssh = SSHClient(simulation.host, **SSH_KEYS[simulation.host]).connect()
+            ssh = SSHClient(simulation.host, **utils.get_ssh_keys()[simulation.host]).connect()
             ssh.cmd(f'rm -r rebound-ctrl/simulations/{id}')
             # TODO: kill process
         except Exception as e:

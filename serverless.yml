@@ -63,7 +63,7 @@ resources:
       Properties:
         Name: ${self:service}-secret
         Description: 'App sensitive data'
-        SecretString: '{}'
+        SecretString: '{"ssh_keys": {}}'
 
     SimulationsTable:
       Type: "AWS::DynamoDB::Table"

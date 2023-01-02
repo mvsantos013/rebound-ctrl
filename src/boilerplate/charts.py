@@ -62,7 +62,7 @@ def plot_charts_for_grid_simulation(meta):
     )
     
     # Delta e chart for the dynamic particle
-    delta_es = dynamic_particle_data['delta_a']                     # List of delta a for each simulation
+    delta_es = dynamic_particle_data['delta_e']                     # List of delta a for each simulation
     delta_es = [abs(e) for e in delta_es]                           # Convert delta a from AU to KM
     vmin, vmax = min(delta_es), max(delta_es)                       # Range of z values in chart
     z_values = np.array(delta_es).reshape(n_grid, n_grid)
